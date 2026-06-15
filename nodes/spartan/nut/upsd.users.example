@@ -1,0 +1,12 @@
+# NUT upsd.users.example — spartan
+# Copy to upsd.users and set secure passwords before use.
+# This file must be readable only by the nut user: chmod 640, chown root:nut
+
+[monuser]
+    password = CHANGE_ME
+    upsmon primary
+
+[admin]
+    password = CHANGE_ME
+    actions = SET, RESTART, SHUTDOWN
+    instcmds = ALL

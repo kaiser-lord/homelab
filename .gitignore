@@ -1,0 +1,29 @@
+# Secrets — never commit these
+.env
+*.env
+upsd.users
+**/upsd.users
+
+# Exclude actual credential files (use .example versions instead)
+**/*secret*
+**/*password*
+**/*apikey*
+
+# Logs
+*.log
+*.log.*
+
+# Prometheus / Grafana data directories
+**/prometheus_data/
+**/grafana_data/
+**/meilisearch_data/
+**/karakeep/data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+*.swp
+*~

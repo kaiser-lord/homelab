@@ -1,0 +1,20 @@
+# logrotate config for NUT UPS monitor log
+# Path: /etc/logrotate.d/nut-monitor
+#
+# NOTE: File must be owned by nut:nut, not root:root
+# Install: cp this file to /etc/logrotate.d/nut-monitor
+
+/var/log/nut/ups-monitor.log {
+    yearly
+    rotate 3
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 644 nut nut
+    dateext
+    dateformat -%Y
+    postrotate
+        echo "$(date): UPS monitor log rotated - yearly rotation completed" >> /var/log/system-maintenance.log
+    endscript
+}

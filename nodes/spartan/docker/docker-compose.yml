@@ -1,0 +1,136 @@
+services:
+  # --- BOOKMARKING ---
+  karakeep:
+    image: ghcr.io/karakeep-app/karakeep:release
+    container_name: karakeep
+    ports:
+      - "3000:3000"
+    environment:
+      - DATA_DIR=/data
+      - DB_URL=file:/data/db.sqlite
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=http://YOUR_VM_IP:3000
+
+      # --- Groq AI (0MB Local RAM Impact) ---
+      - OPENAI_API_KEY=${GROQ_API_KEY}
+      - OPENAI_BASE_URL=https://api.groq.com/openai/v1
+      - INFERENCE_TEXT_MODEL=llama-3.3-70b-versatile
+      - INFERENCE_IMAGE_MODEL=meta-llama/llama-4-scout-17b-16e-instruct
+      # Required for models that don't support structured JSON output
+      - INFERENCE_OUTPUT_SCHEMA=plain
+      - INFERENCE_ENABLE_AUTO_SUMMARIZATION=true
+
+      # --- Search (Meilisearch) ---
+      - SEARCH_BACKEND=meilisearch
+      - MEILI_ADDR=http://meilisearch:7700
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+
+      # --- Browser (Remote Chrome) ---
+      - BROWSER_WEB_URL=http://chrome:9222
+    volumes:
+      - ./karakeep/data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.5'
+    restart: always
+    depends_on:
+      - meilisearch
+      - chrome
+
+  # Lightweight Search Engine (<30MB RAM)
+  # IMPORTANT: Always pin a specific version tag. Meilisearch uses a versioned
+  # database format — updating the image without migrating data will break the index.
+  meilisearch:
+    image: getmeili/meilisearch:v1.41.0
+    container_name: meilisearch
+    ports:
+      - "7700:7700"
+    restart: always
+    environment:
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+      - MEILI_NO_ANALYTICS=true
+    volumes:
+      - ./meilisearch_data:/meilisearch_data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # Headless Browser
+  chrome:
+    image: zenika/alpine-chrome:latest
+    container_name: chrome
+    command: [
+      "--headless",
+      "--disable-gpu",
+      "--remote-debugging-address=0.0.0.0",
+      "--remote-debugging-port=9222",
+      "--disable-dev-shm-usage",
+      "--no-sandbox"
+    ]
+    deploy:
+      resources:
+        limits:
+          memory: 400M
+    restart: unless-stopped
+
+  # --- MONITORING ---
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=365d'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./monitoring/grafana_data:/var/lib/grafana
+    user: "472"
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+    restart: unless-stopped
+
+  nut-exporter:
+    image: druggeri/nut_exporter:latest
+    container_name: nut-exporter
+    environment:
+      # Set to your Proxmox host IP running NUT
+      - NUT_EXPORTER_SERVER=${PROXMOX_HOST_IP}
+    ports:
+      - "9199:9199"
+    restart: unless-stopped
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:latest
+    container_name: blackbox-exporter
+    ports:
+      - "9115:9115"
+    restart: unless-stopped
