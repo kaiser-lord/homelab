@@ -1,0 +1,111 @@
+global:
+  scrape_interval: 15s # How often to check for data
+
+scrape_configs:
+  # 1. Prometheus monitors itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # 2a. Karakeep VM hardware (the Docker container's own view - 4GB VM, not the host)
+  - job_name: 'node-exporter-karakeep-vm'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # 2b. pve-node1 (t620) bare-metal host hardware
+  - job_name: 'node-exporter-pve-node1'  #spartan node
+    static_configs:
+      - targets: ['ip']
+
+  # 2c. pbs-pdm-node3 (Samsung RV510) bare-metal host hardware
+  - job_name: 'node-exporter-pbs-pdm-node3'
+    static_configs:
+      - targets: ['ip']
+
+  # 3. Karakeep monitoring
+  - job_name: 'karakeep'
+    metrics_path: /api/metrics
+    authorization:
+      type: Bearer
+      credentials: 'credentials'
+    static_configs:
+      - targets: ['ip_karakeep']
+
+  # 4. UPS monitoring
+  - job_name: 'ups-apcups'
+    metrics_path: /ups_metrics
+    params:
+      ups: ['apcups']  # This MUST match the name in your upsc command
+      server: ['server_ip']
+    static_configs:
+      - targets: ['nut-exporter:9199']
+        labels:
+          ups: 'apcups'
+
+  # 5. Internet monitoring
+  - job_name: 'internet-uptime'
+    metrics_path: /probe
+    params:
+      module: [icmp]
+    static_configs:
+      - targets:
+        - 8.8.8.8        # Google DNS
+        - 1.1.1.1        # Cloudflare
+        - 208.67.222.222 # OpenDNS
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # 6. Internal network monitoring (Network A LAN + NetBird mesh)
+  - job_name: 'internal-network'
+    metrics_path: /probe
+    params:
+      module: [icmp]
+    static_configs:
+      - targets:
+          - ip     # Network A gateway/router
+        labels:
+          link_type: 'lan'
+      - targets:
+          - ip   # spartan (Network A LAN)
+          - ip   # pbs-pdm-node3 (Network A LAN)
+        labels:
+          link_type: 'lan'
+      - targets:
+          - ip     # spartan via NetBird
+          - ip     # pve-node2 via NetBird (Network B, no direct LAN route)
+          - ip     # pbs-pdm-node3 via NetBird
+        labels:
+          link_type: 'netbird'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+   # 7. HTTP service monitoring
+  - job_name: 'http-services'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://grafana_ip   # Grafana
+          - http://prometheus_ip  # Prometheus
+          - http://karakeep-ip   # Karakeep
+          - http://adguard_ip        # AdGuard Home
+          - http://netbird_ip_n8n   # n8n (LXC, own NetBird IP)
+          - http://netbird_ip_ollama  # Ollama (LXC, own NetBird IP)
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
