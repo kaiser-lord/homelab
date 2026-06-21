@@ -1,0 +1,20 @@
+---
+targets:
+  # External / ISP
+  - hosts:
+      - 1.1.1.1
+      - 8.8.8.8
+    interval: 1s
+
+  # Network A LAN (real physical hops)
+  - hosts:
+      - ip     # gateway/router
+      - ip   # pbs-pdm-node3
+    interval: 1s
+
+  # NetBird mesh (all three nodes)
+  - hosts:
+      - ip     # spartan
+      - ip     # pve-node2
+      - ip     # pbs-pdm-node3
+    interval: 1s

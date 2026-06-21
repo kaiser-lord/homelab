@@ -8,25 +8,27 @@ services:
     environment:
       - DATA_DIR=/data
       - DB_URL=file:/data/db.sqlite
-      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
-      - NEXTAUTH_URL=http://YOUR_VM_IP:3000
+      - NEXTAUTH_SECRET=secret
+      - NEXTAUTH_URL=ip
 
       # --- Groq AI (0MB Local RAM Impact) ---
-      - OPENAI_API_KEY=${GROQ_API_KEY}
+      - OPENAI_API_KEY=secret
       - OPENAI_BASE_URL=https://api.groq.com/openai/v1
+      #- INFERENCE_TEXT_MODEL=qwen/qwen3-32b
       - INFERENCE_TEXT_MODEL=llama-3.3-70b-versatile
       - INFERENCE_IMAGE_MODEL=meta-llama/llama-4-scout-17b-16e-instruct
-      # Required for models that don't support structured JSON output
       - INFERENCE_OUTPUT_SCHEMA=plain
       - INFERENCE_ENABLE_AUTO_SUMMARIZATION=true
 
       # --- Search (Meilisearch) ---
       - SEARCH_BACKEND=meilisearch
-      - MEILI_ADDR=http://meilisearch:7700
-      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+      - MEILI_ADDR=ip
+      - MEILI_MASTER_KEY=secret
 
       # --- Browser (Remote Chrome) ---
-      - BROWSER_WEB_URL=http://chrome:9222
+      - BROWSER_WEB_URL=ip
+      # --- Prometheus Auth Token ---
+      - PROMETHEUS_AUTH_TOKEN=secret
     volumes:
       - ./karakeep/data:/data
     deploy:
@@ -39,9 +41,7 @@ services:
       - meilisearch
       - chrome
 
-  # Lightweight Search Engine (<30MB RAM)
-  # IMPORTANT: Always pin a specific version tag. Meilisearch uses a versioned
-  # database format — updating the image without migrating data will break the index.
+# Lightweight Search Engine (<30MB RAM)
   meilisearch:
     image: getmeili/meilisearch:v1.41.0
     container_name: meilisearch
@@ -49,12 +49,12 @@ services:
       - "7700:7700"
     restart: always
     environment:
-      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+      - MEILI_MASTER_KEY=secret
       - MEILI_NO_ANALYTICS=true
     volumes:
       - ./meilisearch_data:/meilisearch_data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      test: ["CMD", "curl", "-f", "url"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -63,14 +63,14 @@ services:
         limits:
           memory: 512M
 
-  # Headless Browser
+  # Headless Browser (Modern Alpine Chrome)
   chrome:
     image: zenika/alpine-chrome:latest
     container_name: chrome
     command: [
-      "--headless",
-      "--disable-gpu",
-      "--remote-debugging-address=0.0.0.0",
+      "--headless", 
+      "--disable-gpu", 
+      "--remote-debugging-address=0.0.0.0", 
       "--remote-debugging-port=9222",
       "--disable-dev-shm-usage",
       "--no-sandbox"
@@ -78,17 +78,18 @@ services:
     deploy:
       resources:
         limits:
-          memory: 400M
+          memory: 400M # To not starve the T620
     restart: unless-stopped
 
-  # --- MONITORING ---
+
+  # --- MONITORING (The "Brain") ---
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
-      - '--storage.tsdb.retention.time=365d'
+      - '--storage.tsdb.retention.time=365d' # 1-YEAR DATA
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
       - ./monitoring/prometheus_data:/prometheus
@@ -96,6 +97,7 @@ services:
       - "9090:9090"
     restart: unless-stopped
 
+  # --- VISUALIZATION (The "Internal Webpage") ---
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
@@ -103,9 +105,10 @@ services:
       - "3001:3000"
     volumes:
       - ./monitoring/grafana_data:/var/lib/grafana
-    user: "472"
+    user: "472" # Standard Grafana UID
     restart: unless-stopped
 
+  # --- HARDWARE DATA COLLECTOR ---
   node-exporter:
     image: prom/node-exporter:latest
     container_name: node-exporter
@@ -118,19 +121,47 @@ services:
       - '--path.sysfs=/host/sys'
     restart: unless-stopped
 
+  # --- UPS DATA COLLECTOR ---
   nut-exporter:
     image: druggeri/nut_exporter:latest
     container_name: nut-exporter
     environment:
-      # Set to your Proxmox host IP running NUT
-      - NUT_EXPORTER_SERVER=${PROXMOX_HOST_IP}
+      # Change this to your Proxmox Host IP
+      - NUT_EXPORTER_SERVER=ip
     ports:
       - "9199:9199"
     restart: unless-stopped
 
+  # --- INTERNET MONITORING ---
   blackbox-exporter:
     image: prom/blackbox-exporter:latest
     container_name: blackbox-exporter
     ports:
       - "9115:9115"
+    restart: unless-stopped
+
+  # --- NTFY NOTIFICATIONS ---
+  ntfy:
+    image: binwiederhier/ntfy
+    container_name: ntfy
+    command: serve
+    ports:
+      - "2586:80"
+    volumes:
+      - ./ntfy/data:/var/cache/ntfy
+      - ./ntfy/config:/etc/ntfy
+    restart: unless-stopped
+
+  # --- CONTINUOUS LATENCY/JITTER/LOSS PROBING ---
+  smokeping-prober:
+    image: quay.io/superq/smokeping-prober:latest
+    container_name: smokeping-prober
+    cap_add:
+      - NET_RAW
+    volumes:
+      - ./monitoring/smokeping-targets.yml:/config/targets.yml
+    command:
+      - '--config.file=/config/targets.yml'
+    ports:
+      - "9374:9374"
     restart: unless-stopped
