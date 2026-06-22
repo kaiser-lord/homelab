@@ -36,7 +36,7 @@ scrape_configs:
     static_configs:
       - targets: ['url']
 
-  # 4. UPS monitoring
+ # 4a. UPS monitoring - main apcups on pve-node1 (Network A)
   - job_name: 'ups-apcups'
     metrics_path: /ups_metrics
     params:
@@ -46,6 +46,19 @@ scrape_configs:
       - targets: ['url']
         labels:
           ups: 'apcups'
+
+  # 4b. UPS monitoring — vpcups on pve-node2 (Network B via NetBird)
+  - job_name: 'ups-vpcups'
+    metrics_path: /ups_metrics
+    params:
+      ups: ['vpcups']
+      server: ['url']
+      username: ['username']
+      password: ['password']
+    static_configs:
+      - targets: ['url']
+        labels:
+          ups: 'vpcups'
 
   # 5. Internet monitoring
   - job_name: 'internet-uptime'
